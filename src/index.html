@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Agentic AI – video scene engine</title>
+<!--
+  The whole video is this one page. Every visual element is ordinary HTML/CSS.
+  app.js exposes window.seek(t): it draws the exact frame for time t (seconds).
+  scripts/render.py calls seek() for every frame and screenshots it.
+  Open with ?play to watch it live, or ?t=30 to freeze on a moment.
+-->
+<style>
+/* Fonts are bundled in src/fonts (SIL Open Font License) so the video looks identical on every machine */
+@font-face{font-family:JBM;src:url(fonts/jetbrains-mono-latin-400-normal.woff2);font-weight:400}
+@font-face{font-family:JBM;src:url(fonts/jetbrains-mono-latin-500-normal.woff2);font-weight:500}
+@font-face{font-family:JBM;src:url(fonts/jetbrains-mono-latin-700-normal.woff2);font-weight:700}
+@font-face{font-family:Inter;src:url(fonts/inter-latin-400-normal.woff2);font-weight:400}
+@font-face{font-family:Inter;src:url(fonts/inter-latin-500-normal.woff2);font-weight:500}
+@font-face{font-family:Inter;src:url(fonts/inter-latin-600-normal.woff2);font-weight:600}
+@font-face{font-family:Inter;src:url(fonts/inter-latin-700-normal.woff2);font-weight:700}
+@font-face{font-family:Inter;src:url(fonts/inter-latin-800-normal.woff2);font-weight:800}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#000}
+body{font-family:Inter,"DejaVu Sans",sans-serif;color:#ccc;-webkit-font-smoothing:antialiased}
+.mono{font-family:JBM,"DejaVu Sans Mono",monospace}
+#stage{position:absolute;inset:0;overflow:hidden;background:radial-gradient(1200px 700px at 30% 20%,#2b3550 0%,#141a28 55%,#0b0e15 100%)}
+#cam{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0}
+/* GNOME-like top bar */
+#topbar{position:absolute;left:0;top:0;width:1920px;height:26px;background:#0d0d0f;color:#e8e8e8;font-size:13.5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;padding:0 14px;z-index:50}
+#topbar .tray{display:flex;gap:14px;align-items:center;font-weight:500;color:#cfcfcf}
+.scene{position:absolute;inset:0;opacity:0}
+.win{position:absolute;border-radius:10px 10px 0 0;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06)}
+.wctl{display:flex;gap:10px;align-items:center}
+.wctl i{width:13px;height:13px;border-radius:50%;background:#4a4a4f;display:block}
+.wctl i.x{background:#e05d44}
+
+/* ---------------- VS Code ---------------- */
+#vsc{left:0;top:26px;width:1920px;height:1054px;background:#1e1e1e;border-radius:0}
+#vsc .title{height:34px;background:#323233;display:flex;align-items:center;font-size:13px;color:#ccc;position:relative;padding:0 12px}
+#vsc .menu{display:flex;gap:16px;font-size:13px;color:#cccccc;margin-left:44px}
+#vsc .ttl{position:absolute;left:50%;transform:translateX(-50%);color:#bbb}
+#vsc .title .wctl{position:absolute;right:14px}
+#act{position:absolute;left:0;top:34px;width:48px;bottom:22px;background:#333333;display:flex;flex-direction:column;align-items:center;padding-top:8px;gap:20px}
+#act svg{width:26px;height:26px;stroke:#858585;fill:none;stroke-width:1.6}
+#act svg.on{stroke:#fff}
+#act .sel{position:absolute;left:0;width:2px;height:48px;background:#fff;top:4px}
+#side{position:absolute;left:48px;top:34px;width:260px;bottom:22px;background:#252526;font-size:13px}
+#side .hd{height:35px;line-height:35px;padding-left:20px;font-size:11px;letter-spacing:.06em;color:#bbb}
+.row{height:22px;line-height:22px;padding-left:8px;white-space:nowrap;color:#ccc;display:flex;align-items:center;gap:6px;font-size:13px}
+.row.sel{background:#37373d;outline:1px solid #007fd4;outline-offset:-1px}
+.row .ic{width:16px;text-align:center;font-weight:700;font-size:11px}
+.row b{font-weight:700;font-size:11px;letter-spacing:.04em}
+#main{position:absolute;left:308px;right:0;top:34px;bottom:22px;background:#1e1e1e}
+#tabs{height:35px;background:#252526;display:flex}
+.tab{height:35px;line-height:35px;padding:0 14px 0 12px;background:#2d2d2d;color:#969696;font-size:13px;border-right:1px solid #252526;display:flex;gap:7px;align-items:center;white-space:nowrap}
+.tab.on{background:#1e1e1e;color:#fff;border-top:1px solid #007acc}
+.tab .py{color:#4b9fd6;font-weight:700;font-size:11px}
+.tab .dot{width:8px;height:8px;border-radius:50%;background:#c5c5c5;margin-left:6px}
+#crumb{height:22px;line-height:22px;padding-left:18px;font-size:12.5px;color:#a9a9a9}
+#editor{position:absolute;left:0;right:0;top:57px;overflow:hidden;font-family:JBM,monospace;font-size:15px}
+#codewrap{position:absolute;left:0;right:120px;top:0}
+.ln{height:22px;line-height:22px;white-space:pre;display:flex}
+.ln .no{width:64px;text-align:right;padding-right:22px;color:#6e7681;flex:none}
+.ln.cur{background:#ffffff08;box-shadow:inset 0 0 0 1px #282828}
+.ln.cur .no{color:#c6c6c6}
+.caret{display:inline-block;width:2px;height:19px;background:#aeafad;vertical-align:-4px;margin-left:-1px}
+#minimap{position:absolute;right:14px;top:0;width:96px;bottom:0;opacity:.75}
+#minimap div{height:3px;margin-bottom:1px;border-radius:1px}
+#welcome{position:absolute;inset:57px 0 0 0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#5a5a5a;font-size:15px;gap:14px}
+#welcome .big{font-size:64px;color:#2c2c2c;font-weight:700;letter-spacing:-2px}
+#panel{position:absolute;left:0;right:0;bottom:0;background:#1e1e1e;border-top:1px solid #3c3c3c;overflow:hidden}
+#panel .ph{height:35px;display:flex;gap:22px;align-items:center;padding-left:20px;font-size:11.5px;letter-spacing:.04em;color:#8b8b8b}
+#panel .ph .on{color:#e7e7e7;border-bottom:1px solid #e7e7e7;padding-bottom:3px}
+#term1{position:absolute;left:20px;right:20px;top:40px;bottom:6px;font-family:JBM,monospace;font-size:14.5px;line-height:19.5px;white-space:pre;overflow:hidden;color:#cccccc}
+#status{position:absolute;left:0;right:0;bottom:0;height:22px;background:#007acc;color:#fff;font-size:12px;display:flex;align-items:center;padding:0 10px;gap:18px}
+#status .r{margin-left:auto;display:flex;gap:18px}
+/* syntax (Dark+) */
+.k{color:#c586c0}.b{color:#569cd6}.f{color:#dcdcaa}.t{color:#4ec9b0}.s{color:#ce9178}.c{color:#6a9955}.n{color:#b5cea8}.v{color:#9cdcfe}.C{color:#4fc1ff}.d{color:#dcdcaa}.p{color:#d4d4d4}
+/* terminal colours */
+.tg{color:#23d18b}.tb{color:#3b8eea}.ty{color:#e5e510}.tm{color:#d670d6}.tc{color:#29b8db}.tr{color:#f14c4c}.td{color:#7f848e}.tw{color:#e5e5e5;font-weight:700}
+
+/* ---------------- Browser chrome ---------------- */
+.bwin{background:#0f1117}
+.bbar{height:76px;background:#202124;border-bottom:1px solid #000}
+.btabs{height:38px;display:flex;align-items:flex-end;padding-left:12px;gap:4px;position:relative}
+.btab{height:31px;width:250px;background:#35363a;border-radius:9px 9px 0 0;color:#e8eaed;font-size:12.5px;display:flex;align-items:center;gap:8px;padding:0 12px}
+.btab .fav{width:15px;height:15px;border-radius:4px;background:linear-gradient(135deg,#7c5cff,#22d3ee)}
+.btab.off{background:transparent;color:#9aa0a6}
+.btabs .wctl{position:absolute;right:14px;top:12px}
+.burl{height:38px;background:#35363a;display:flex;align-items:center;gap:14px;padding:0 14px;color:#9aa0a6;font-size:14px}
+.burl .box{flex:1;height:28px;border-radius:14px;background:#202124;display:flex;align-items:center;padding:0 14px;color:#e8eaed;font-size:13.5px;gap:8px}
+.burl .box span{color:#9aa0a6}
+
+/* ---------------- Graph studio ---------------- */
+#gwin{left:0;top:26px;width:1920px;height:1054px;border-radius:0}
+#gapp{position:absolute;left:0;top:76px;right:0;bottom:0;background:#0e1016}
+#ghead{position:relative;height:48px;background:#13161f;border-bottom:1px solid #232838;display:flex;align-items:center;padding:0 20px;gap:14px;font-size:14px;color:#e6e9f2}
+#ghead .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#7c5cff,#22d3ee)}
+#ghead .crumbs{color:#7c849a}
+#ghead .run{position:absolute;right:400px;top:86px;height:32px;padding:0 16px;border-radius:7px;background:#6d5dfc;color:#fff;font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
+#gleft{position:absolute;left:0;top:48px;bottom:0;width:280px;background:#12151d;border-right:1px solid #232838;padding:18px 16px}
+.plab{font-size:11px;letter-spacing:.08em;color:#6b7286;margin:4px 0 12px}
+.pitem{height:40px;border-radius:8px;background:#191d28;border:1px solid #262c3c;margin-bottom:10px;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:13.5px;color:#cfd5e4}
+.pitem i{width:22px;height:22px;border-radius:6px;display:block}
+#gcanvas{position:absolute;left:280px;right:380px;top:48px;bottom:0;background-color:#0e1016;background-image:radial-gradient(#252a38 1.2px,transparent 1.2px);background-size:24px 24px;background-position:-8px -6px;overflow:hidden}
+#gright{position:absolute;right:0;top:48px;bottom:0;width:380px;background:#12151d;border-left:1px solid #232838;padding:18px 18px}
+#gsvg{position:absolute;left:0;top:-102px;width:1920px;height:1080px;overflow:visible}
+.node{position:absolute;width:210px;height:76px;margin:-38px 0 0 -105px;border-radius:12px;background:#171b26;border:1.5px solid #2c3346;display:flex;align-items:center;gap:12px;padding:0 14px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.node .ico{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
+.node .ico svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2}
+.node .nt{font-size:14.5px;font-weight:600;color:#eef1f8}
+.node .ns{font-size:11.5px;color:#7d859b;margin-top:3px;font-family:JBM,monospace}
+.node .st{position:absolute;right:10px;top:10px;width:8px;height:8px;border-radius:50%;background:#3a4157}
+.node .badge{position:absolute;left:50%;top:-30px;transform:translateX(-50%);white-space:nowrap;font-family:JBM,monospace;font-size:11.5px;padding:3px 9px;border-radius:6px;background:#2a2346;color:#c9bcff;border:1px solid #4b3f8a}
+.node.done .st{background:#22c55e;box-shadow:0 0 8px #22c55e}
+.elab{position:absolute;font-family:JBM,monospace;font-size:11.5px;color:#8b93a8;background:#0e1016;padding:1px 6px;border-radius:4px;transform:translate(-50%,-50%)}
+.ev{font-family:JBM,monospace;font-size:12.5px;line-height:18px;padding:9px 10px;border-radius:7px;background:#171b26;border:1px solid #232838;margin-bottom:8px;color:#c7cde0}
+.ev .tm{color:#6b7286;font-size:11px}
+#toast{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);background:#132a1f;border:1px solid #1f6f45;color:#bdf5d3;padding:12px 22px;border-radius:10px;font-size:15px;font-weight:600;display:flex;gap:10px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+
+#gnodes,#glabels{position:absolute;left:0;top:-102px;width:1920px;height:1080px}
+/* ---------------- Test scene ---------------- */
+#twin{left:16px;top:42px;width:932px;height:1022px;background:#0c0e12;border-radius:10px}
+#twin .tt{height:36px;background:#1f2128;display:flex;align-items:center;justify-content:center;font-size:13px;color:#c9ccd3;position:relative}
+#twin .tt .wctl{position:absolute;right:12px}
+#term2{position:absolute;left:16px;right:12px;top:48px;bottom:10px;font-family:JBM,monospace;font-size:14px;line-height:20px;white-space:pre;overflow:hidden;color:#d0d4dc}
+#cwin{left:964px;top:42px;width:940px;height:1022px;border-radius:10px}
+#capp{position:absolute;left:0;top:76px;right:0;bottom:0;background:#0f1117}
+#chead{height:52px;border-bottom:1px solid #22252f;display:flex;align-items:center;padding:0 20px;gap:12px;color:#e6e9f2;font-size:15px;font-weight:600}
+#chead .pill{font-size:12px;font-weight:500;color:#9aa3b5;background:#1a1d27;border:1px solid #2a2e3b;border-radius:20px;padding:3px 10px;font-family:JBM,monospace}
+#cmsgs{position:absolute;left:0;right:0;top:52px;bottom:96px;padding:24px 26px;overflow:hidden}
+.ubub{margin-left:auto;max-width:560px;background:#3b3570;color:#f1efff;padding:13px 17px;border-radius:16px 16px 4px 16px;font-size:15.5px;line-height:22px;width:fit-content}
+.abub{margin-top:18px;background:#161922;border:1px solid #252a37;border-radius:14px;padding:16px 18px;font-size:14.5px;color:#d6dbe7}
+.step{display:flex;gap:10px;align-items:center;height:28px;font-size:14px}
+.spin{width:15px;height:15px;border-radius:50%;border:2px solid #3b4258;border-top-color:#8b7bff;display:inline-block}
+.chk{width:16px;height:16px;border-radius:50%;background:#22c55e;color:#06210f;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.pend{width:15px;height:15px;border-radius:50%;border:2px solid #333a4d;display:inline-block}
+.rep h3{font-size:17px;color:#fff;margin:4px 0 10px}
+.rep table{width:100%;border-collapse:collapse;font-size:13.2px;margin-bottom:12px}
+.rep th{text-align:left;color:#8f98ad;font-weight:600;border-bottom:1px solid #2a2f3d;padding:6px 6px}
+.rep td{border-bottom:1px solid #20242f;padding:7px 6px;color:#d9deea;vertical-align:top}
+.rep li{margin:0 0 6px 18px;font-size:13.8px;line-height:19px}
+.rep .src{color:#7d86a0;font-size:12px;margin-top:6px}
+#cinput{position:absolute;left:24px;right:24px;bottom:22px;height:54px;border-radius:12px;background:#171a23;border:1px solid #2c3140;display:flex;align-items:center;padding:0 16px;font-size:15.5px;color:#eef0f6}
+#cinput.focus{border-color:#7766ff;box-shadow:0 0 0 3px rgba(119,102,255,.18)}
+#cinput .ph{color:#636b80}
+#csend{position:absolute;right:8px;top:8px;width:38px;height:38px;border-radius:9px;background:#2a2f3e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px}
+
+/* ---------------- Dashboard ---------------- */
+#dwin{left:0;top:26px;width:1920px;height:1054px;border-radius:0}
+#dapp{position:absolute;left:0;top:76px;right:0;bottom:0;background:#0d0f15}
+#dside{position:absolute;left:0;top:0;bottom:0;width:232px;background:#11141c;border-right:1px solid #1f2330;padding:20px 14px}
+#dside .brand{display:flex;gap:10px;align-items:center;color:#fff;font-weight:700;font-size:15px;margin:0 6px 28px}
+#dside .brand i{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#7c5cff,#22d3ee);display:block}
+.nav{height:38px;border-radius:8px;display:flex;align-items:center;gap:12px;padding:0 12px;font-size:14px;color:#9ba3b7;margin-bottom:4px}
+.nav.on{background:#1c2130;color:#fff}
+.nav i{width:16px;height:16px;border-radius:4px;border:1.6px solid currentColor;display:block}
+#dmain{position:absolute;left:232px;right:0;top:0;bottom:0;padding:0 32px}
+#dhead{height:68px;display:flex;align-items:center;gap:16px}
+#dhead h1{font-size:22px;color:#fff;font-weight:700}
+#dhead .on{margin-left:auto;font-size:13px;color:#86efac;background:#10261b;border:1px solid #1d5a38;border-radius:20px;padding:5px 12px}
+#dhead .av{width:34px;height:34px;border-radius:50%;background:#2a3042;color:#cfd6e6;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.card{background:#141822;border:1px solid #222838;border-radius:14px;position:absolute}
+.kpi{padding:18px 20px}
+.kpi .l{font-size:13px;color:#8b93a8}
+.kpi .v{font-size:32px;color:#fff;font-weight:700;margin-top:8px;letter-spacing:-.5px}
+.kpi .dlt{font-size:12.5px;color:#4ade80;margin-top:6px}
+.kpi svg{position:absolute;right:18px;bottom:18px}
+.ch{font-size:15px;color:#fff;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.ch .sub{font-size:12.5px;color:#8b93a8;font-weight:400;margin-left:auto}
+#dinput{position:absolute;left:24px;top:52px;right:240px;height:46px;border-radius:10px;background:#0f121a;border:1px solid #2a3042;display:flex;align-items:center;padding:0 16px;font-size:15.5px;color:#eef0f6}
+#dinput.focus{border-color:#7766ff;box-shadow:0 0 0 3px rgba(119,102,255,.18)}
+#dbtn{position:absolute;right:24px;top:52px;width:196px;height:46px;border-radius:10px;background:#6d5dfc;color:#fff;font-weight:600;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px}
+.ps{height:76px;border-bottom:1px solid #1f2432;display:flex;align-items:center;gap:16px;padding:0 6px}
+.ps .num{width:30px;height:30px;border-radius:8px;background:#1c2130;color:#a7b0c6;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.ps .tx{flex:1}
+.ps .a{font-size:15px;color:#eef1f8}
+.ps .b2{font-size:12.5px;color:#7d859b;font-family:JBM,monospace;margin-top:4px}
+.chip{font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px;width:92px;text-align:center}
+.chip.q{background:#1b1f2b;color:#7d859b}
+.chip.r{background:#272152;color:#b9adff}
+.chip.d{background:#0f2a1c;color:#6ee7a0}
+.ps .dur{width:60px;text-align:right;font-family:JBM,monospace;font-size:12.5px;color:#7d859b}
+.tool{height:42px;display:flex;align-items:center;gap:12px;font-size:14px;color:#d5dae6;border-radius:9px;padding:0 10px;margin-bottom:6px;background:#11141c;border:1px solid #1f2432}
+.tool i{width:9px;height:9px;border-radius:50%;background:#3a4157;display:block}
+.tool .u{margin-left:auto;font-family:JBM,monospace;font-size:12px;color:#7d859b}
+.tool.act{border-color:#5b4fd8;background:#191736}
+.tool.act i{background:#a78bfa;box-shadow:0 0 10px #a78bfa}
+#dout{font-size:14.2px;line-height:21px;color:#d9deea}
+#dout h4{color:#fff;font-size:16px;margin-bottom:10px}
+#dout li{margin:0 0 8px 18px}
+.bar{height:6px;border-radius:3px;background:#1d2230;overflow:hidden}
+.bar div{height:100%;background:linear-gradient(90deg,#6d5dfc,#22d3ee)}
+
+/* overlays */
+
+/* ---------------- Multimodal studio (finale) ---------------- */
+#mwin{left:0;top:26px;width:1920px;height:1054px;border-radius:0}
+#mapp{position:absolute;left:0;top:76px;right:0;bottom:0;background:#0c0e14}
+#mhead{height:48px;background:#12151d;border-bottom:1px solid #222838;display:flex;align-items:center;gap:12px;padding:0 20px;font-size:14px;color:#e6e9f2}
+#mhead .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#7c5cff,#22d3ee)}
+#mhead .crumbs{color:#7c849a}
+.mp{font-size:12px;color:#c9bcff;background:#1d1838;border:1px solid #3b3270;border-radius:20px;padding:3px 10px;font-family:JBM,monospace}
+#mhead .mon{margin-left:auto;font-size:12.5px;color:#86efac;font-family:JBM,monospace}
+#mchat{position:absolute;left:0;top:48px;bottom:0;width:720px;background:#10131b;border-right:1px solid #222838}
+#mmsgs{position:absolute;left:0;right:0;top:0;bottom:140px;padding:22px 24px;overflow:hidden}
+#minput{position:absolute;left:24px;right:24px;bottom:20px;height:104px;border-radius:14px;background:#171a23;border:1px solid #2c3140;padding:12px 16px;font-size:15.5px;color:#eef0f6;line-height:22px}
+#minput.focus{border-color:#7766ff;box-shadow:0 0 0 3px rgba(119,102,255,.18)}
+#mchip{height:30px;margin-bottom:6px}
+.achip{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 4px;border-radius:8px;background:#232736;border:1px solid #343a4e;font-size:12.5px;color:#cfd5e4}
+.achip i{width:22px;height:22px;border-radius:5px;display:block;background:conic-gradient(from 200deg,#7c5cff,#22d3ee,#f472b6,#7c5cff)}
+#msend{position:absolute;right:10px;bottom:10px;width:38px;height:38px;border-radius:9px;background:#2a2f3e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px}
+.mcard{position:absolute;top:74px;bottom:24px;width:560px;background:#131722;border:1px solid #232a3b;border-radius:14px;padding:16px 24px}
+#mimg{left:752px}#mvid{left:1336px}
+.mch{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;color:#fff;height:22px;margin-bottom:12px}
+.mch .st{margin-left:auto;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:#1b1f2b;color:#7d859b}
+.mbox{position:relative;border-radius:10px;overflow:hidden;background:#090a10;border:1px solid #232a3b}
+.mbox .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#4b5266;font-size:14px;border:1.5px dashed #2a3042;border-radius:10px}
+.mmeta{font-family:JBM,monospace;font-size:12.5px;color:#8b93a8;margin-top:12px;line-height:20px}
+.mbtns{display:flex;gap:10px;margin-top:14px}
+.mbtns span{font-size:13px;padding:7px 14px;border-radius:8px;background:#1c2130;color:#d5dae6;border:1px solid #2a3042}
+.mbtns span.pri{background:#6d5dfc;border-color:#6d5dfc;color:#fff}
+.strip{display:flex;gap:4px;margin-top:12px}
+.strip div{width:61px;height:34px;border-radius:4px;overflow:hidden;background:#1a1e2a;border:1px solid #262c3c}
+.sb{display:flex;gap:10px;align-items:center;height:30px;font-size:13.5px;color:#cfd5e4}
+.sb .n{font-family:JBM,monospace;font-size:12px;color:#7d859b;width:52px}
+.tl{position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(transparent,rgba(0,0,0,.75));display:flex;align-items:center;gap:10px;padding:0 12px;font-family:JBM,monospace;font-size:12px;color:#fff}
+.tl .trk{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.25);position:relative}
+.tl .trk b{position:absolute;left:0;top:0;bottom:0;background:#a78bfa;border-radius:2px}
+.gstep{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:#e2e6f0;margin-bottom:9px}
+.gstep .sub{font-family:JBM,monospace;font-size:12px;color:#8b93a8;margin-top:3px}
+#cursor{position:absolute;left:0;top:0;width:26px;height:34px;z-index:100;pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
+#ripple{position:absolute;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;border:2px solid rgba(140,170,255,.9);z-index:99;opacity:0}
+#chapter{position:absolute;left:40px;bottom:40px;display:flex;align-items:center;gap:12px;background:rgba(14,16,22,.82);border:1px solid rgba(255,255,255,.1);padding:10px 18px 10px 12px;border-radius:10px;color:#e9ecf3;font-size:17px;font-weight:600;backdrop-filter:blur(6px);opacity:0;z-index:200}
+#chapter .n{font-family:JBM,monospace;font-size:13px;background:#6d5dfc;color:#fff;padding:3px 8px;border-radius:6px}
+#speed{position:absolute;right:40px;bottom:44px;font-family:JBM,monospace;font-size:14px;color:#fff;background:rgba(14,16,22,.75);border:1px solid rgba(255,255,255,.12);padding:5px 10px;border-radius:7px;opacity:0;z-index:200}
+#black{position:absolute;inset:0;background:#000;opacity:0;z-index:300}
+</style></head>
+<body>
+<div id="stage">
+ <div id="cam">
+  <div id="topbar"><span>Activities</span><span id="clock">Wed Oct 14 10:12</span><span class="tray"><span>EN</span><span>⏻</span></span></div>
+
+  <!-- ================= VS CODE ================= -->
+  <div class="scene" id="s-code">
+   <div class="win" id="vsc">
+    <div class="title"><div class="menu"><span>File</span><span>Edit</span><span>Selection</span><span>View</span><span>Go</span><span>Run</span><span>Terminal</span><span>Help</span></div>
+     <div class="ttl" id="vttl">Welcome — Visual Studio Code</div><div class="wctl"><i></i><i></i><i class="x"></i></div></div>
+    <div id="act">
+     <svg class="on" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+     <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 3-11 6"/></svg>
+     <svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+     <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>
+     <div class="sel"></div>
+    </div>
+    <div id="side"><div class="hd">EXPLORER</div><div id="tree"></div></div>
+    <div id="main">
+     <div id="tabs"></div>
+     <div id="crumb"></div>
+     <div id="welcome"><div class="big">{ }</div><div>Open a folder or create a new file to start</div></div>
+     <div id="editor"><div id="codewrap"></div><div id="minimap"></div></div>
+     <div id="panel"><div class="ph"><span>PROBLEMS</span><span>OUTPUT</span><span>DEBUG CONSOLE</span><span class="on">TERMINAL</span><span style="margin-left:auto;margin-right:20px;color:#bbb">bash</span></div><div id="term1"></div></div>
+    </div>
+    <div id="status"><span>⎇ main</span><span id="stproblems">⊗ 0  ⚠ 0</span><div class="r"><span id="stpos"></span><span>Spaces: 4</span><span>UTF-8</span><span>LF</span><span id="stlang"></span><span id="stpy"></span></div></div>
+   </div>
+  </div>
+
+  <!-- ================= GRAPH STUDIO ================= -->
+  <div class="scene" id="s-graph">
+   <div class="win bwin" id="gwin">
+    <div class="bbar"><div class="btabs"><div class="btab"><i class="fav"></i>Agent Graph Studio</div><div class="btab off">localhost:8000/docs</div><div class="wctl"><i></i><i></i><i class="x"></i></div></div>
+     <div class="burl"><span>←</span><span>→</span><span>↻</span><div class="box"><span>ⓘ</span>localhost:8123<span>/graph/agent</span></div></div></div>
+    <div id="gapp">
+     <div id="ghead"><i class="logo"></i><span style="font-weight:700">Agent Graph Studio</span><span class="crumbs">/ agentic-ai-assistant / agent</span><span id="gcount" class="crumbs" style="margin-left:18px"></span>
+       <div class="run" id="grun" style="top:8px">▶ Run</div></div>
+     <div id="gleft"><div class="plab">NODES</div><div id="palette"></div>
+       <div class="plab" style="margin-top:30px">THREADS</div><div class="pitem" style="font-family:JBM,monospace;font-size:12.5px;color:#8b93a8">thread · 7f3a91</div></div>
+     <div id="gcanvas"></div>
+     <div id="gright"><div class="ch">Run inspector <span class="sub">Events</span></div><div id="gev"></div></div>
+     <svg id="gsvg"><defs>
+       <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5d6680"/></marker>
+       <marker id="ahA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a78bfa"/></marker>
+       <marker id="ahG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#34d399"/></marker>
+       <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1200"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+     </defs><g id="gedges"></g><g id="gdots"></g></svg>
+     <div id="gnodes"></div><div id="glabels"></div>
+     <div id="toast" style="opacity:0"><span class="chk">✓</span><span>Run complete — 7 steps · 6 tool calls · 18.4s</span></div>
+    </div>
+   </div>
+  </div>
+
+  <!-- ================= TEST ================= -->
+  <div class="scene" id="s-test">
+   <div class="win" id="twin"><div class="tt">dev@workstation: ~/agentic-ai-assistant<div class="wctl"><i></i><i></i><i class="x"></i></div></div><div id="term2"></div></div>
+   <div class="win bwin" id="cwin">
+    <div class="bbar"><div class="btabs"><div class="btab" style="width:230px"><i class="fav"></i>Agent Playground</div><div class="wctl"><i></i><i></i><i class="x"></i></div></div>
+     <div class="burl"><span>←</span><span>→</span><span>↻</span><div class="box"><span>ⓘ</span>localhost:8000<span>/playground</span></div></div></div>
+    <div id="capp">
+     <div id="chead">Agentic AI Assistant <span class="pill">gpt-4o</span><span class="pill">3 tools</span><span class="pill">memory: on</span></div>
+     <div id="cmsgs"></div>
+     <div id="cinput"><span id="ctext"></span><div id="csend">↑</div></div>
+    </div>
+   </div>
+  </div>
+
+  <!-- ================= DASHBOARD ================= -->
+  <div class="scene" id="s-dash">
+   <div class="win bwin" id="dwin">
+    <div class="bbar"><div class="btabs"><div class="btab"><i class="fav"></i>Agent Console</div><div class="btab off">Agent Graph Studio</div><div class="wctl"><i></i><i></i><i class="x"></i></div></div>
+     <div class="burl"><span>←</span><span>→</span><span>↻</span><div class="box"><span>ⓘ</span>localhost:8000<span>/console</span></div></div></div>
+    <div id="dapp">
+     <div id="dside"><div class="brand"><i></i>Agentic AI</div>
+      <div class="nav on"><i></i>Overview</div><div class="nav"><i></i>Tasks</div><div class="nav"><i></i>Agents</div><div class="nav"><i></i>Tools</div><div class="nav"><i></i>Memory</div><div class="nav"><i></i>Logs</div><div class="nav"><i></i>Settings</div></div>
+     <div id="dmain">
+      <div id="dhead"><h1>Overview</h1><span class="on">● Agent online</span><div class="av">DV</div></div>
+      <div id="kpis"></div>
+      <div class="card" style="left:32px;right:32px;top:206px;height:120px;padding:18px 24px"><div class="ch">New task <span class="sub">The agent plans, picks tools and executes on its own</span></div>
+        <div id="dinput"><span id="dtext"></span></div><div id="dbtn">Run agent ▶</div></div>
+      <div class="card" style="left:32px;width:900px;top:346px;bottom:24px;padding:20px 24px"><div class="ch">Execution plan <span class="sub" id="dplansub">Waiting for a task</span></div><div class="bar" style="margin-bottom:8px"><div id="dprog" style="width:0"></div></div><div id="dplan"></div></div>
+      <div class="card" style="left:952px;right:32px;top:346px;height:300px;padding:20px 24px"><div class="ch">Connected tools <span class="sub">5 available</span></div><div id="dtools"></div></div>
+      <div class="card" style="left:952px;right:32px;top:666px;bottom:24px;padding:20px 24px"><div class="ch">Output <span class="sub" id="doutsub">—</span></div><div id="dout"></div></div>
+     </div>
+    </div>
+   </div>
+  </div>
+
+
+  <!-- ================= MULTIMODAL STUDIO ================= -->
+  <div class="scene" id="s-gen">
+   <div class="win bwin" id="mwin">
+    <div class="bbar"><div class="btabs"><div class="btab"><i class="fav"></i>Agent Studio</div><div class="btab off">Agent Console</div><div class="wctl"><i></i><i></i><i class="x"></i></div></div>
+     <div class="burl"><span>←</span><span>→</span><span>↻</span><div class="box"><span>ⓘ</span>localhost:8000<span>/studio</span></div></div></div>
+    <div id="mapp">
+     <div id="mhead"><i class="logo"></i><b>Agent Studio</b><span class="crumbs">/ multimodal</span><span class="mp">text</span><span class="mp">image</span><span class="mp">video</span><span class="mon">● agent online · tools: image.generate, video.generate</span></div>
+     <div id="mchat"><div id="mmsgs"></div><div id="minput"><div id="mchip"></div><div id="mtext"></div><div id="msend">↑</div></div></div>
+     <div class="mcard" id="mimg"><div class="mch">Image <span class="st" id="mimgst">Idle</span></div>
+       <div class="mbox" id="mimgbox" style="width:512px;height:512px"></div><div id="mimgmeta"></div></div>
+     <div class="mcard" id="mvid"><div class="mch">Video <span class="st" id="mvidst">Idle</span></div>
+       <div class="mbox" id="mvidbox" style="width:512px;height:288px"></div><div class="strip" id="mstrip"></div><div id="mvidmeta"></div></div>
+    </div>
+   </div>
+  </div>
+  <div id="ripple"></div>
+  <svg id="cursor" viewBox="0 0 26 34"><path d="M2 2 L2 26 L8 20.5 L12.5 31 L16.5 29.2 L12.2 19 L20.5 19 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg>
+ </div>
+ <div id="chapter"><span class="n" id="chn">01</span><span id="cht"></span></div>
+ <div id="speed">▶▶ 8×</div>
+ <div id="black"></div>
+</div>
+<script src="code.js"></script>
+<script src="app.js"></script>
+<script src="gen.js"></script>
+<script src="player.js"></script>
+</body></html>

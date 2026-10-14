@@ -1,0 +1,16 @@
+# rendered output
+output/*
+!output/.gitkeep
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+# agent example
+agent-example/.env
+agent-example/chroma_data/
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

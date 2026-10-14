@@ -1,0 +1,10 @@
+# Agent example — tested with the versions in brackets (Python 3.10+)
+langgraph>=0.4          # [1.2.15] the agent graph: nodes, edges, checkpointer
+langchain-openai>=0.3   # [1.7.1]  ChatOpenAI (the LLM)
+langchain-core>=0.3     # [1.6.10] @tool decorator, messages
+langchain-tavily>=0.2   # web search tool (needs a free TAVILY_API_KEY)
+chromadb>=1.0           # [1.5.9]  long-term vector memory
+python-dotenv>=1.0      # loads API keys from .env
+rich>=13                # coloured terminal logs
+fastapi>=0.110          # web playground (python main.py --serve)
+uvicorn>=0.29
